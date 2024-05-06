@@ -1,0 +1,78 @@
+version: "3.7"
+
+services: # each service represents a container
+  currency-naming-server:
+    image: currency-naming-server:0.0.2-SNAPSHOT
+    mem_limit: 700m
+    ports:
+      - "8761:8761"
+    networks:
+      - currency-network
+
+  curr-mysql-db:
+    image: mysql:latest
+    mem_limit: 700m
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: currency-database
+      MYSQL_USER: currency-user
+      MYSQL_PASSWORD: dummypassword
+      MYSQL_ROOT_PASSWORD: dummypassword
+    networks:
+      - currency-network
+
+  currency-exchange:
+    image: currency-exchange:0.0.2-SNAPSHOT
+    mem_limit: 700m
+    restart: always # this is mandatory: restart until curr-mysql-db and currency-naming server is up
+    ports:
+      - "8000:8000"
+    environment: # override environment variables to match containers in docker
+      - spring.datasource.url=jdbc:mysql://curr-mysql-db:3306/currency-database
+      - eureka.client.serviceUrl.defaultZone=http://currency-naming-server:8761/eureka
+      - management.zipkin.tracing.endpoint=http://currency-zipkin-server:9411/api/v2/spans
+
+    networks:
+      - currency-network
+    depends_on: # it does not wait for another service to finish, it only waits until the other services starts.
+      - currency-naming-server
+      - curr-mysql-db
+
+  currency-conversion:
+    image: currency-conversion:0.0.2-SNAPSHOT
+    mem_limit: 700m
+    ports:
+      - "8100:8100"
+    environment: # override environment variables to match containers in docker
+      - eureka.client.serviceUrl.defaultZone=http://currency-naming-server:8761/eureka
+      - management.zipkin.tracing.endpoint=http://currency-zipkin-server:9411/api/v2/spans
+    networks:
+      - currency-network
+    depends_on: # it does not wait for another service to finish, it only waits until the other services starts.
+      - currency-naming-server
+      - currency-exchange
+
+  currency-api-gateway:
+    image: currency-api-gateway:0.0.1-SNAPSHOT
+    mem_limit: 700m
+    ports:
+      - "8765:8765"
+    environment: # override environment variables to match containers in docker
+      - eureka.client.serviceUrl.defaultZone=http://currency-naming-server:8761/eureka
+      - management.zipkin.tracing.endpoint=http://currency-zipkin-server:9411/api/v2/spans
+    networks:
+      - currency-network
+    depends_on: # it does not wait for another service to finish, it only waits until the other services starts.
+      - currency-naming-server
+  
+  currency-zipkin-server:
+    image: openzipkin/zipkin:latest
+    mem_limit: 300m
+    ports:
+      - "9411:9411"
+    networks:
+      - currency-network
+
+networks:
+  currency-network: # created a common network for currency application
